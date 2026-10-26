@@ -1,0 +1,38 @@
+[
+  {
+    "id": "art-001",
+    "title": "HDFC Bank announces 15% dividend, board approves stock buyback",
+    "content": "HDFC Bank today announced a 15% dividend for its shareholders along with a major stock buyback program approved by the board of directors. The move is seen as a positive signal for investors.",
+    "source": "Financial Express"
+  },
+  {
+    "id": "art-002",
+    "title": "RBI raises repo rate by 25bps to 6.75%, citing inflation concerns",
+    "content": "The Reserve Bank of India (RBI) has increased the repo rate by 25 basis points to 6.75%. The central bank cited rising inflation concerns as the primary reason for this decision.",
+    "source": "Reuters"
+  },
+  {
+    "id": "art-003",
+    "title": "ICICI Bank opens 500 new branches across Tier-2 cities",
+    "content": "In a major expansion drive, ICICI Bank announced the opening of 500 new branches, focusing heavily on Tier-2 cities to increase financial inclusion and capture rural markets.",
+    "source": "Economic Times"
+  },
+  {
+    "id": "art-004",
+    "title": "Banking sector NPAs decline to 5-year low, credit growth at 16%",
+    "content": "The overall banking sector has shown significant improvement as Non-Performing Assets (NPAs) have declined to a 5-year low. Simultaneously, credit growth has surged to 16%, indicating a healthy economy.",
+    "source": "Bloomberg"
+  },
+  {
+    "id": "art-005",
+    "title": "Central bank hikes interest rates in surprise move",
+    "content": "In a bid to control rising prices, the RBI raised its key lending rate by 25 basis points to 6.75%. This move was anticipated by some but still surprised the broader market.",
+    "source": "CNBC"
+  },
+  {
+    "id": "art-006",
+    "title": "Tata Motors reports 20% surge in EV sales",
+    "content": "Tata Motors has reported a massive 20% year-over-year surge in electric vehicle sales, solidifying its dominant position in the Indian EV market. The automotive sector continues to expand.",
+    "source": "Mint"
+  }
+]
