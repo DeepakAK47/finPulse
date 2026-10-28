@@ -1,5 +1,5 @@
 # setup for vector database
-import chromadb
+import chromadb # library to manage the vector database 
 import os
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
