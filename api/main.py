@@ -1,11 +1,14 @@
 # api/main.py
 from dotenv import load_dotenv
+
+load_dotenv()
+
 from fastapi import FastAPI
 from pydantic import BaseModel
 from src.graphs.query_graph import query_app
 
 app = FastAPI(title="FinPulse API")
-load_dotenv()
+
 class QueryInput(BaseModel):
     query: str
 

@@ -15,4 +15,4 @@ news_collection = client.get_or_create_collection(
     name="news_articles", 
     metadata={"hnsw:space": "cosine"}
 )
-print("✅ ChromaDB initialized.")
+print("ChromaDB initialized.")

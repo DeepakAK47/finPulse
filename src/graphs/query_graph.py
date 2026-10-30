@@ -2,7 +2,7 @@
 from langgraph.graph import StateGraph, END
 from src.schemas.query_state import QueryState
 from src.agents.query_router import route_query
-from src.agents.query_retrieval import retrieve_news
+from src.agents.querry_retrival import retrieve_news
 
 workflow = StateGraph(QueryState)
 

@@ -2,10 +2,13 @@
 # This agent is responsible for extracting entities from text using the gemini API. It takes a text as input and returns a list of extracted entities.
     
 import os
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from typing import List
 from langchain_google_genai import ChatGoogleGenerativeAI
 from src.schemas.state import NewsState
+
+load_dotenv()
 
 # 1. Define the exact schema we want the LLM to return
 class ExtractedEntities(BaseModel):
