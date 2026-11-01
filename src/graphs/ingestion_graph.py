@@ -1,8 +1,8 @@
-# src/graphs/ingestion_graph.py
+# graph of work flow of complete set up
 from langgraph.graph import StateGraph, END
-from src.schemas.state import NewsState
+from src.schemas.state import NewsState # importing newsstate Schema
 
-# Import all our agents
+# Import all our agents Nodes
 from src.agents.deduplication import deduplicate_news
 from src.agents.entity_extraction import extract_entities
 from src.agents.impact_analysis import analyze_impact

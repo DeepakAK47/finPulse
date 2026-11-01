@@ -1,4 +1,4 @@
-# src/agents/storage.py
+# storage agent
 from src.schemas.state import NewsState
 from src.database.sqlite_client import SessionLocal, NewsArticle
 

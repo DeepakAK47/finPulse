@@ -1,4 +1,4 @@
-# LangGraph state schema for news articles
+# Schema for input state
 from typing import TypedDict, List, Dict, Optional
 
 class NewsState(TypedDict):
@@ -17,3 +17,5 @@ class NewsState(TypedDict):
     sectors: Optional[List[str]]
     regulators: Optional[List[str]]
     impacted_stocks: Optional[List[Dict]]
+
+    

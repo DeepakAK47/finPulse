@@ -1,3 +1,4 @@
+# Schema for query output
 from typing import TypedDict,List,Optional,Dict
 
 class QueryState(TypedDict):

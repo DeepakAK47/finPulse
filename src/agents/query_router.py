@@ -1,4 +1,4 @@
-# query_router.py
+# query_router agent
 import os
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
@@ -6,7 +6,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from src.schemas.query_state import QueryState
 
 load_dotenv()
-
+    
 class QueryIntent(BaseModel):
     query_type: str = Field(description="Must be one of: 'company', 'sector', 'regulator', 'semantic'")
     extracted_entity: str = Field(description="The specific company, sector, or regulator mentioned. If semantic, return 'None'.")
