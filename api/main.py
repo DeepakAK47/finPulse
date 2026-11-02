@@ -9,6 +9,12 @@ from src.graphs.query_graph import query_app
 
 app = FastAPI(title="FinPulse API")
 
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
 class QueryInput(BaseModel):
     query: str
 

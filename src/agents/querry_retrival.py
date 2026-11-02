@@ -6,7 +6,7 @@ from src.utils.embedding import get_embedding
 import json
 
 def retrieve_news(state: QueryState) -> QueryState:
-    print(f"🔎 Retrieving data for type: {state['query_type']}")
+    print(f"Retrieving data for type: {state['query_type']}")
     db = SessionLocal()
     results = []
     
@@ -23,15 +23,19 @@ def retrieve_news(state: QueryState) -> QueryState:
             
             # Combine and deduplicate
             all_matches = {art.id: art for art in direct_matches + sector_matches}.values()
-            results = [{"title": art.title, "content": art.content, "impact": art.impacted_stocks, "reason": "Direct + Sector Match"} for art in all_matches]
+            results = [{"title": art.title, "content": art.content, "source": art.source, "impact": art.impacted_stocks, "reason": "Direct + Sector Match"} for art in all_matches]
 
         elif q_type == "sector":
             sector_matches = db.query(NewsArticle).filter(NewsArticle.sectors.contains(entity)).all()
-            results = [{"title": art.title, "content": art.content, "impact": art.impacted_stocks, "reason": "Sector Match"} for art in sector_matches]
+            # Combine and deduplicate
+            all_matches = {art.id: art for art in sector_matches}.values()
+            results = [{"title": art.title, "content": art.content, "source": art.source, "impact": art.impacted_stocks, "reason": "Direct + Sector Match"} for art in all_matches]
 
         elif q_type == "regulator":
             reg_matches = db.query(NewsArticle).filter(NewsArticle.regulators.contains(entity)).all()
-            results = [{"title": art.title, "content": art.content, "impact": art.impacted_stocks, "reason": "Regulator Match"} for art in reg_matches]
+            # Combine and deduplicate
+            all_matches = {art.id: art for art in reg_matches}.values() 
+            results = [{"title": art.title, "content": art.content, "source": art.source, "impact": art.impacted_stocks, "reason": "Direct + Sector Match"} for art in all_matches]
 
         elif q_type == "semantic":
             # Use ChromaDB for semantic search
@@ -43,11 +47,11 @@ def retrieve_news(state: QueryState) -> QueryState:
                 for art_id in ids:
                     art = db.query(NewsArticle).filter(NewsArticle.id == art_id).first()
                     if art:
-                        results.append({"title": art.title, "content": art.content, "impact": art.impacted_stocks, "reason": "Semantic Match"})
+                        results.append({"title": art.title, "content": art.content, "source": art.source, "impact": art.impacted_stocks, "reason": "Semantic Match"})
                         
     finally:
         db.close()
         
     state['results'] = results
-    print(f"✅ Found {len(results)} relevant articles.")
+    print(f"Found {len(results)} relevant articles.")
     return state

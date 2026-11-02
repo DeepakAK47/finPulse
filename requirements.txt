@@ -1,0 +1,12 @@
+apscheduler
+chromadb
+fastapi
+langchain-google-genai
+langgraph
+pandas
+python-dotenv
+requests
+sentence-transformers
+sqlalchemy
+streamlit>=1.57
+uvicorn

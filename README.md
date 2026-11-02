@@ -15,9 +15,10 @@ The repository is currently at **Stage 1**. The implemented workflow:
 4. Stores that embedding in the persistent ChromaDB collection
    `news_articles`.
 
-The FastAPI entry point, Streamlit frontend, LangGraph workflows, and
-deduplication, entity-extraction, impact-analysis, and query-routing modules
-are present as project structure but are not implemented yet.
+The FastAPI entry point and LangGraph workflows are available for API-based
+queries. The Streamlit dashboard is a local-first UI for browsing every
+stored article, inspecting enrichment and impacted symbols, filtering news,
+and running classified searches without requiring FastAPI or a Gemini key.
 
 ## Architecture
 
@@ -80,6 +81,30 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install chromadb sentence-transformers sqlalchemy
+```
+
+## Run the Streamlit dashboard
+
+The dashboard automatically creates the SQLite table and upserts the six
+bundled sample articles on startup. It can be used without starting another
+service:
+
+```powershell
+.\python3.11\Scripts\streamlit.exe run frontend\app.py
+```
+
+Open the displayed local URL, then use the sidebar to switch between:
+
+- **Dashboard** — coverage metrics, sources, sectors, and latest articles.
+- **News explorer** — filter and inspect all article content and enrichment.
+- **Search & intelligence** — classify company, sector, regulator, and keyword
+  queries locally. The optional FastAPI/Gemini/Chroma path can be enabled per
+  query when the API is running.
+
+To run the optional API in a second terminal:
+
+```powershell
+.\python3.11\Scripts\uvicorn.exe api.main:app --reload
 ```
 
 ## Run the Stage 1 workflow
