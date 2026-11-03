@@ -33,7 +33,7 @@ if __name__ == "__main__":
     
     # Run once immediately on startup
     run_pipeline()
-    
+          
     # Schedule to run every 15 minutes
     scheduler = BlockingScheduler()
     scheduler.add_job(run_pipeline, 'interval', minutes=15)
