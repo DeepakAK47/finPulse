@@ -80,9 +80,6 @@ finPulse/
 │   ├── schemas/
 │   └── utils/
 ├── scheduler.py                # Runs ingestion immediately, then every 15 minutes
-├── test_stage1.py              # Stage 1 smoke test
-├── test_stage2.py              # Stage 2 smoke test
-├── stage4_test.py              # Full ingestion workflow smoke test
 ├── ARCHITECTURE.md
 ├── changed_req.txt
 └── requirements.txt
