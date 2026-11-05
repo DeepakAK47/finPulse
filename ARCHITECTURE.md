@@ -1,269 +1,380 @@
-# finPulse Architecture
+# FinPulse Architecture
 
-## 1. System overview
+## 1. Purpose and system boundary
 
-finPulse is a local financial-news intelligence application. It accepts news
-articles for enrichment and exposes natural-language search over the enriched
-articles.
+FinPulse is a local-first financial-news intelligence application. It
+ingests market news, detects semantically similar articles, extracts entities,
+maps those entities to potentially impacted symbols, and exposes the resulting
+data through a Streamlit dashboard and an optional FastAPI service.
 
-The current implementation is a development/demo system rather than a
-production service:
+The current implementation is a development system:
 
-- SQLite and ChromaDB persist state on the local filesystem.
-- The embedding model is loaded in-process.
-- Gemini is used for structured entity extraction and query classification.
-- The API and Streamlit frontend are separate processes.
-- There is no authentication, background queue, scheduler, or external news
-  ingestion adapter yet.
+- SQLite and ChromaDB persist data on the local filesystem.
+- The embedding model and graph workloads run in the application process.
+- Gemini is optional for query routing but is required by the current entity
+  extraction node.
+- Finnhub supplies live news to the scheduler and manual API trigger.
+- The API and Streamlit frontend run as separate processes.
+- There is no authentication, queue, multi-user isolation, or production
+  deployment configuration.
 
-The main runtime components are:
+## 2. Component overview
 
 ```text
+                         +---------------------------+
+                         | Streamlit dashboard       |
+                         | frontend/app.py           |
+                         +-------------+-------------+
+                                       |
+                   local SQLite read  |  optional HTTP calls
+                   + Chroma fallback  |  to /query and
+                                       |  /fetch-latest
+                                       v
+                         +-------------+-------------+
+                         | FastAPI service           |
+                         | api/main.py               |
+                         +------+------+-------------+
+                                |      |
+                          query |      | background ingestion
+                                v      v
+                 +--------------+--+  +----------------------+
+                 | Query LangGraph |  | Ingestion LangGraph  |
+                 | router ->       |  | dedup -> extraction  |
+                 | retrieval       |  | -> impact -> storage |
+                 +-------+---------+  +----------+-----------+
+                         |                       |
+              +----------+----------+            |
+              |                     |            |
+              v                     v            v
+       +------+-------+      +------+-------+  +--+-----------+
+       | SQLite       |      | ChromaDB     |  | Gemini       |
+       | article data |      | vectors      |  | extraction   |
+       +--------------+      +--------------+  | and routing |
+                                               +--------------+
+
                          +----------------------+
-                         |  Streamlit frontend  |
-                         |    frontend/app.py   |
-                         +----------+-----------+
-                                    |
-                              POST /query
-                                    |
-                         +----------v-----------+
-                         |    FastAPI service   |
-                         |      api/main.py     |
-                         +----------+-----------+
-                                    |
-                         +----------v-----------+
-                         |   Query LangGraph    |
-                         | router -> retrieval |
-                         +-----+----------+-----+
-                               |          |
-                       structured LLM    |
-                               |          |
-                  +------------v--+   +--v-------------+
-                  | Gemini Flash  |   | SQLite metadata |
-                  | query routing |   | article records |
-                  +---------------+   +----------------+
-                                             ^
-                                             |
-                  +--------------------------+--------------------------+
-                  |                                                     |
-          +-------+--------+                                   +--------+-------+
-          | Ingestion flow |                                   | ChromaDB       |
-          | dedup ->       |---- embeddings ------------------>| vector store   |
-          | extraction ->  |                                   | semantic query |
-          | impact -> save |                                   +----------------+
-          +----------------+
+                         | scheduler.py         |
+                         | Finnhub -> ingestion |
+                         +----------------------+
 ```
 
-## 2. Source layout and responsibilities
+### Main modules
 
-| Area | Responsibility |
+| Module | Responsibility |
 | --- | --- |
-| [`src/agents/`](./src/agents/) | Individual ingestion and query-processing steps |
-| [`src/graphs/`](./src/graphs/) | LangGraph state machines that compose the agents |
-| [`src/schemas/`](./src/schemas/) | Typed state passed between graph nodes |
-| [`src/database/`](./src/database/) | SQLite ORM setup and persistent ChromaDB collection |
-| [`src/utils/embedding.py`](./src/utils/embedding.py) | Shared `all-MiniLM-L6-v2` embedding model |
-| [`api/main.py`](./api/main.py) | FastAPI application and `POST /query` endpoint |
-| [`frontend/app.py`](./frontend/app.py) | Streamlit user interface |
-| [`data/mock_news.json`](./data/mock_news.json) | Local sample article input |
-| [`tests/`](./tests/) and root test scripts | Smoke tests, stage checks, and benchmark code |
+| [`src/agents/ingestion.py`](./src/agents/ingestion.py) | Fetch live Finnhub news |
+| [`src/agents/deduplication.py`](./src/agents/deduplication.py) | Embed articles and detect duplicates |
+| [`src/agents/entity_extraction.py`](./src/agents/entity_extraction.py) | Extract companies, sectors, and regulators |
+| [`src/agents/impact_analysis.py`](./src/agents/impact_analysis.py) | Map entities to impacted symbols |
+| [`src/agents/storage.py`](./src/agents/storage.py) | Persist enriched articles in SQLite |
+| [`src/agents/query_router.py`](./src/agents/query_router.py) | Classify user queries |
+| [`src/agents/querry_retrival.py`](./src/agents/querry_retrival.py) | Retrieve matching articles |
+| [`src/graphs/ingestion_graph.py`](./src/graphs/ingestion_graph.py) | Compose the ingestion nodes |
+| [`src/graphs/query_graph.py`](./src/graphs/query_graph.py) | Compose routing and retrieval |
+| [`src/database/sqlite_client.py`](./src/database/sqlite_client.py) | SQLAlchemy engine and `NewsArticle` model |
+| [`src/database/chroma_client.py`](./src/database/chroma_client.py) | Persistent ChromaDB client and collection |
+| [`src/utils/embedding.py`](./src/utils/embedding.py) | Shared Sentence Transformers model |
+| [`api/main.py`](./api/main.py) | FastAPI routes and background ingestion trigger |
+| [`frontend/app.py`](./frontend/app.py) | Streamlit UI and local data loading |
+| [`scheduler.py`](./scheduler.py) | Immediate and 15-minute recurring ingestion |
 
-`api/routes.py` exists as a reserved module but is not currently wired into the
-FastAPI application. The active endpoint is defined in `api/main.py`.
+## 3. Data flow
 
-## 3. Ingestion architecture
+### 3.1 Live ingestion
 
-### 3.1 Input
+Live ingestion starts in either [`scheduler.py`](./scheduler.py) or the
+`POST /fetch-latest` API endpoint:
 
-[`load_mock_news`](./src/agents/ingestion.py) reads
-[`data/mock_news.json`](./data/mock_news.json) and assigns a UUID if an input
-article does not already have an `id`. The sample data supplies stable IDs such
-as `art-001`.
+```text
+Finnhub
+  -> fetch_real_news()
+  -> article state
+  -> ingestion_app.invoke()
+  -> ChromaDB deduplication
+  -> Gemini entity extraction
+  -> rule-based impact analysis
+  -> SQLite storage
+```
 
-The ingestion graph expects a `NewsState` containing:
+Finnhub articles are normalized to:
 
-- `article_id`
-- `title`
-- `content`
-- `source`
-- deduplication fields (`is_duplicate`, `canonical_id`)
-- enrichment fields (`companies`, `sectors`, `regulators`, `impacted_stocks`)
+```text
+article_id, title, content, source,
+is_duplicate, canonical_id
+```
 
-### 3.2 LangGraph workflow
+The scheduler processes all fetched articles. The API trigger intentionally
+processes at most five articles per request to keep the UI request lightweight.
+The API returns immediately because ingestion is registered as a FastAPI
+background task.
 
-The compiled graph is [`ingestion_app`](./src/graphs/ingestion_graph.py):
+### 3.2 Ingestion graph
+
+The compiled graph is `ingestion_app` in
+[`src/graphs/ingestion_graph.py`](./src/graphs/ingestion_graph.py):
 
 ```text
 deduplication
       |
       +-- duplicate --> END
       |
-      +-- unique -----> extraction -> impact -> storage -> END
+      +-- unique --> extraction --> impact --> storage --> END
 ```
 
-1. **Deduplication** — [`deduplicate_news`](./src/agents/deduplication.py)
-   concatenates the title and content, creates an embedding, and queries the
-   `news_articles` ChromaDB collection. A cosine distance below `0.25` marks
-   the article as a duplicate and records the matching canonical ID. Unique
-   articles are added to ChromaDB.
-2. **Entity extraction** — [`extract_entities`](./src/agents/entity_extraction.py)
-   sends the article to Gemini with a Pydantic structured-output schema and
-   populates companies, sectors, and regulators.
-3. **Impact analysis** — [`analyze_impact`](./src/agents/impact_analysis.py)
-   applies local company, sector, and regulator-to-ticker mappings. It
-   de-duplicates ticker symbols and attaches a confidence and impact type.
-4. **Storage** — [`store_article`](./src/agents/storage.py) writes the enriched
-   article to SQLite unless the article ID already exists.
+1. **Deduplication**
+   - Combines title and content.
+   - Generates an `all-MiniLM-L6-v2` embedding.
+   - Queries the `news_articles` ChromaDB collection for one nearest result.
+   - Treats cosine distance below `0.25` as a duplicate.
+   - Stores unique vectors in ChromaDB before continuing.
+2. **Entity extraction**
+   - Sends the article to Gemini using structured Pydantic output.
+   - Produces `companies`, `sectors`, and `regulators`.
+3. **Impact analysis**
+   - Applies local company, sector, and regulator mappings.
+   - Adds symbol, confidence, and impact type.
+   - Removes duplicate symbols from the result.
+4. **Storage**
+   - Inserts the enriched article into SQLite when its ID is not already
+     present.
+   - Rolls back a failed database transaction and logs the error.
 
-Duplicate articles stop after the vector lookup. They are not written to the
-SQLite article table by the current graph.
+Duplicate articles stop after deduplication and are not currently inserted
+into SQLite. This means a vector can exist in ChromaDB without a corresponding
+SQLite article record.
 
-## 4. Query architecture
+### 3.3 Query flow
 
-### 4.1 Request path
-
-The Streamlit app sends the user's text to `http://127.0.0.1:8000/query`.
-FastAPI validates the body using `QueryInput`, invokes the compiled
-[`query_app`](./src/graphs/query_graph.py), and returns the original query,
-the detected query type, and result records.
-
-The query state contains:
-
-- `query`: original natural-language query
-- `query_type`: `company`, `sector`, `regulator`, or `semantic`
-- `extracted_entity`: entity selected by the classifier, or `None` for semantic
-  queries
-- `results`: retrieved article summaries
-
-### 4.2 LangGraph workflow
+The query graph is `query_app` in
+[`src/graphs/query_graph.py`](./src/graphs/query_graph.py):
 
 ```text
-router -> retrieval -> END
+POST /query
+    -> QueryInput validation
+    -> route_query
+    -> retrieve_news
+    -> response JSON
 ```
 
-1. **Router** — [`route_query`](./src/agents/query_router.py) uses Gemini
-   structured output to classify the query and extract an entity.
-2. **Retrieval** — [`retrieve_news`](./src/agents/querry_retrival.py) uses
-   SQLite JSON-column filters for company, sector, and regulator searches.
-   Semantic searches embed the query, retrieve up to three IDs from ChromaDB,
-   and hydrate the matching article records from SQLite.
+The router classifies the query as:
 
-Company retrieval currently also includes articles tagged with the Banking
-sector. This is a demo rule, not a general company-to-sector knowledge model.
+- `company`
+- `sector`
+- `regulator`
+- `semantic`
 
-## 5. Persistence and data model
+If `GOOGLE_API_KEY` is unavailable, the router uses local keyword rules. If
+Gemini routing fails, it also falls back to those local rules.
 
-### SQLite
+Retrieval behavior:
 
-[`NewsArticle`](./src/database/sqlite_client.py) is stored in the
-`news_articles` table in `data/sqlite.db`:
+- **Company**: searches the SQLite JSON company field and also applies the
+  current Banking-sector fallback rule.
+- **Sector**: searches the SQLite JSON sector field.
+- **Regulator**: searches the SQLite JSON regulator field.
+- **Semantic**: embeds the query, asks ChromaDB for up to three nearest IDs,
+  and hydrates matching article records from SQLite.
 
-| Column | Purpose |
-| --- | --- |
-| `id` | Primary article ID |
-| `title`, `content`, `source` | Original article data |
-| `is_duplicate` | Duplicate decision |
-| `canonical_id` | ID of the matching canonical article |
-| `companies`, `sectors`, `regulators` | JSON arrays from entity extraction |
-| `impacted_stocks` | JSON array of ticker, confidence, and type objects |
+Semantic results require matching SQLite rows. ChromaDB provides IDs and
+similarity search, while SQLite provides the article response fields.
 
-`init_db()` creates the table if it does not exist. SQLAlchemy sessions are
-created through `SessionLocal`, and `get_db()` provides a FastAPI-compatible
-session generator for future route extraction.
+## 4. Persistence model
 
-### ChromaDB
+### 4.1 SQLite
 
-[`chroma_client.py`](./src/database/chroma_client.py) creates a persistent
-ChromaDB client under `data/chroma_db/` and gets or creates the
-`news_articles` collection with cosine distance. The collection stores:
+The database path is `data/sqlite.db`. `init_db()` creates the
+`news_articles` table through SQLAlchemy.
 
-- the embedding generated from title plus content,
-- the combined text as the document,
-- the source as metadata,
-- the article ID as the vector ID.
+| Column | Type | Meaning |
+| --- | --- | --- |
+| `id` | string | Primary article ID |
+| `title` | string | Article headline |
+| `content` | string | Article summary/content |
+| `source` | string | News provider |
+| `is_duplicate` | boolean | Duplicate decision |
+| `canonical_id` | string | Matching canonical vector ID |
+| `companies` | JSON | Extracted company names |
+| `sectors` | JSON | Extracted sector names |
+| `regulators` | JSON | Extracted regulator names |
+| `impacted_stocks` | JSON | Symbol, confidence, and impact type objects |
 
-SQLite is the source of the displayed article and enrichment fields; ChromaDB
-is the similarity index and stores the searchable text/vector representation.
+### 4.2 ChromaDB
 
-## 6. External services and configuration
+The persistent client in [`src/database/chroma_client.py`](./src/database/chroma_client.py)
+uses `data/chroma_db/` and the `news_articles` collection with cosine distance.
+Each vector record contains:
 
-The embedding model is loaded globally by
-[`get_embedding`](./src/utils/embedding.py), which avoids loading a second model
-for every request. The first use may download `all-MiniLM-L6-v2`.
+- the article ID as the ChromaDB ID;
+- the title-plus-content embedding;
+- the combined text document;
+- source metadata;
+- title and content metadata for dashboard fallback records created by newer
+  ingestion runs.
 
-Gemini clients in the extraction and routing agents read `GOOGLE_API_KEY` from
-the environment through `python-dotenv`. The key must be supplied through local
-environment configuration such as `.env`; it must not be committed.
+ChromaDB is the semantic index. SQLite is the preferred source for complete
+article and enrichment data.
 
-The repository currently has no populated dependency manifest. The runtime
-requires the packages used by the implementation, including FastAPI,
-Streamlit, SQLAlchemy, ChromaDB, Sentence Transformers, LangGraph,
-LangChain Google GenAI integration, Pydantic, `python-dotenv`, and `requests`.
+### 4.3 Dashboard data loading
 
-## 7. Running the local system
+The dashboard's `load_articles()` function:
 
-Initialize and exercise the implemented ingestion stages from the repository
-root:
+1. Reads and parses all SQLite `news_articles` rows.
+2. Returns SQLite records when at least one exists.
+3. Falls back to ChromaDB documents and metadata when SQLite is empty.
+4. Derives basic company, sector, regulator, and impact tags for fallback
+   records.
+
+This fallback makes the dashboard useful when a previous run wrote vectors but
+did not complete the SQLite write. It does not repair or synchronize SQLite;
+future ingestion should still complete both writes.
+
+## 5. User interfaces
+
+### Streamlit
+
+[`frontend/app.py`](./frontend/app.py) provides three views:
+
+- **Dashboard**: article count, source count, company count, tracked-symbol
+  count, latest coverage, source chart, and sectors.
+- **News explorer**: source selection and text filtering over loaded records.
+- **Search & intelligence**: local search or optional FastAPI/Gemini query
+  execution.
+
+The sidebar also provides:
+
+- FastAPI URL configuration;
+- **Fetch Latest News**, which calls `POST /fetch-latest`;
+- **Refresh Dashboard**, which clears the article cache and reruns the page.
+
+The article cache has a 30-second TTL. The refresh button clears it
+immediately, which is useful after background ingestion.
+
+### FastAPI
+
+[`api/main.py`](./api/main.py) exposes:
+
+| Method | Route | Behavior |
+| --- | --- | --- |
+| `GET` | `/health` | Returns `{"status": "ok"}` |
+| `POST` | `/query` | Runs the query graph |
+| `POST` | `/fetch-latest` | Starts a background ingestion task |
+
+The API should be started with Uvicorn using `api.main:app` from the repository
+root. Running `api\main.py` directly is not the supported startup path because
+the application imports the top-level `src` package.
+
+## 6. Runtime configuration
+
+Configuration is loaded from `.env` using `python-dotenv`:
+
+```dotenv
+FINNHUB_API_KEY=your_finnhub_key
+GOOGLE_API_KEY=your_google_gemini_key
+```
+
+- `FINNHUB_API_KEY` is required for live news fetching.
+- `GOOGLE_API_KEY` enables Gemini routing and is required by the current
+  entity-extraction node.
+- The embedding model may download on first use and therefore requires
+  internet access initially.
+
+The required Python packages are declared in [`requirements.txt`](./requirements.txt).
+
+## 7. Operational flows
+
+### Start the complete local stack
+
+From the repository root, use separate terminals:
 
 ```powershell
-python test_stage1.py
-python test_stage2.py
-python stage4_test.py
+.\python3.11\Scripts\uvicorn.exe api.main:app --reload
+.\python3.11\Scripts\streamlit.exe run frontend\app.py
+.\python3.11\Scripts\python.exe scheduler.py
 ```
 
-Start the API with Uvicorn, then start Streamlit in a second terminal:
+The scheduler is optional if only existing data needs to be viewed. It is
+needed to fetch new live articles automatically. The API and dashboard can run
+without the scheduler.
+
+### Fetch from the dashboard
+
+1. Start Uvicorn.
+2. Start Streamlit.
+3. Click **Fetch Latest News** in the sidebar.
+4. Wait for the background task to finish.
+5. Click **Refresh Dashboard**.
+
+### Stage and smoke tests
+
+The root scripts exercise individual stages:
 
 ```powershell
-uvicorn api.main:app --reload
-streamlit run frontend/app.py
+.\python3.11\Scripts\python.exe test_stage1.py
+.\python3.11\Scripts\python.exe test_stage2.py
+.\python3.11\Scripts\python.exe stage4_test.py
 ```
 
-The frontend assumes the API is available at `127.0.0.1:8000`. The local
-database and vector store are created beneath `data/`.
+These scripts can modify local SQLite and ChromaDB state. Re-running a script
+with IDs that already exist in ChromaDB may produce duplicate-ID errors.
 
-## 8. Reliability and operational boundaries
+## 8. Failure modes and consistency boundaries
 
-The current design has several intentional development-stage limitations:
+### ChromaDB contains data but SQLite is empty
 
-- Database writes and graph nodes log errors to stdout; production operation
-  should replace this with structured logging and explicit error responses.
-- The ingestion loader is file-based and synchronous.
-- External LLM and embedding calls have no retry, timeout, or rate-limit
-  policy in this codebase.
-- ChromaDB and SQLite are local single-process persistence choices.
-- The API has no authentication or request throttling.
-- JSON substring filtering is convenient for the demo but is not a robust
-  indexed entity-search strategy.
-- Re-running the stage scripts with existing ChromaDB IDs can produce duplicate
-  ID errors.
+This can happen because deduplication writes the unique vector before the
+extraction and SQLite storage nodes run. The dashboard displays ChromaDB
+fallback records, but API semantic retrieval cannot hydrate complete results
+until matching SQLite records exist.
 
-These constraints should be addressed before exposing the service to
-untrusted users or production workloads.
+### Duplicate article
 
-## 9. Testing strategy
+A vector distance below `0.25` ends the ingestion graph early. The duplicate
+article is not stored as a separate SQLite record.
 
-The root stage scripts are executable smoke tests for initialization, embedding,
-vector insertion, deduplication, and the complete ingestion graph. The tests in
-[`tests/`](./tests/) cover the implemented agent behavior where applicable.
-[`benchmark.py`](./benchmark.py) measures duplicate detection, extraction
-latency, and impact mapping against representative sample inputs.
+### Missing Finnhub key
 
-When changing a graph state or persistence schema, update the corresponding
-state definition, graph test, and this document together.
+`fetch_real_news()` raises an error when `FINNHUB_API_KEY` is missing. Configure
+`.env` before starting the scheduler or using `/fetch-latest`.
 
-## 10. Planned evolution
+### Gemini unavailable
 
-The next architectural improvements are:
+Query routing falls back to local rules when Gemini is unavailable. The
+current entity-extraction implementation does not have the same fallback, so
+live ingestion may fail at extraction without `GOOGLE_API_KEY`.
 
-1. Move API handlers into `api/routes.py` and add a dedicated ingestion
-   endpoint.
-2. Populate and pin `requirements.txt`.
-3. Add a real news-source adapter and an idempotent ingestion job.
-4. Separate duplicate handling from vector insertion so canonical links and
-   duplicate records can be persisted consistently.
-5. Replace hard-coded impact mappings with a maintained instrument/entity
-   catalog.
-6. Add request validation, structured logging, retries, health checks, and
-   authentication.
-7. Add integration tests for SQLite, ChromaDB, Gemini failure paths, and the
-   Streamlit/FastAPI boundary.
+### API unavailable
+
+The Streamlit search page reports the API error and falls back to local
+article search. Dashboard and explorer pages continue to work from local
+storage.
+
+## 9. Security and deployment boundaries
+
+The application is intended for local development:
+
+- no authentication or authorization;
+- no request throttling;
+- API keys must remain in `.env`;
+- SQLite and ChromaDB are local files;
+- logs may contain article titles and processing errors;
+- external calls do not yet have a unified retry, tracing, or circuit-breaker
+  policy.
+
+Before exposing the API beyond localhost, add authentication, input limits,
+structured logging, secret management, isolation for database files, and
+controlled network access.
+
+## 10. Evolution roadmap
+
+1. Make ingestion writes durable and coordinated across ChromaDB and SQLite.
+2. Persist duplicate records and canonical relationships consistently.
+3. Add a dedicated ingestion service/queue for long-running jobs.
+4. Add robust retry, timeout, rate-limit, and observability policies.
+5. Replace JSON substring searches with indexed entity tables or a search
+   index.
+6. Generalize company-to-sector and symbol mappings through a maintained
+   instrument catalog.
+7. Add integration tests for both stores, Gemini failure paths, API routes,
+   background ingestion, and dashboard refresh behavior.
+8. Add authentication and deployment-specific configuration before production
+   use.
