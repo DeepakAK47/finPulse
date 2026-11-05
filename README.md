@@ -1,9 +1,8 @@
 # FinPulse
 
-FinPulse is a local-first financial-news intelligence application. It fetches
-market news, stores article records in SQLite, stores semantic vectors in
-ChromaDB, enriches articles with entities and market impact, and exposes the
-data through a Streamlit dashboard and an optional FastAPI service.
+FinPulse is a production-grade, multi-agent AI system that ingests real-time financial news, removes semantic duplicates, extracts market entities, and maps news events to impacted stocks with confidence scores. 
+
+Built to solve the "information overload" problem for traders and investors, FinPulse allows users to query live financial news using natural language.
 
 ## Features
 
