@@ -17,7 +17,6 @@ import pandas as pd
 import requests
 import streamlit as st
 
-
 ROOT_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT_DIR / "data"
 DB_PATH = DATA_DIR / "sqlite.db"
@@ -26,7 +25,6 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from src.database.chroma_client import news_collection
-
 
 COMPANY_TICKERS = {
     "HDFC Bank": "HDFCBANK",
@@ -50,40 +48,6 @@ def _json_value(value: Any, default: Any) -> Any:
     except (TypeError, json.JSONDecodeError):
         return default
 
-
-def intelligence_page(articles: list[dict[str, Any]], api_url: str) -> None:
-    st.title("Search & intelligence")
-    st.caption("Ask the AI multi-agent system about the market.")
-    
-    query = st.text_input("Ask about the market", placeholder="e.g. HDFC Bank, RBI policy, banking sector")
-    
-    if st.button("Analyze query", type="primary", disabled=not query):
-        with st.spinner("LangGraph agents are analyzing your query..."):
-            try:
-                # ALWAYS try to use your real AI backend first
-                response = requests.post(f"{api_url.rstrip('/')}/query", json={"query": query}, timeout=30)
-                response.raise_for_status()
-                payload = response.json()
-                
-                query_type = payload.get("query_type")
-                entity = payload.get("extracted_entity")
-                results = payload.get("results", [])
-                
-                # Show what the AI decided
-                st.success(f"🧠 AI Intent Classified: **{query_type.title()}**" + (f" · Entity: **{entity}**" if entity else ""))
-                
-                if not results:
-                    st.warning("No matching articles found by the AI.")
-                
-                for article in results:
-                    render_article(article, expanded=True)
-                    
-            except requests.RequestException as error:
-                # ONLY fallback to local search if the backend is completely dead
-                st.error(f"🚨 FastAPI backend is offline ({error}). Falling back to basic local search.")
-                query_type, entity, results = search_articles(articles, query)
-                for article in results:
-                    render_article(article, expanded=True)
 
 def _enrich_article(article: dict[str, Any]) -> dict[str, Any]:
     text = f"{article.get('title', '')} {article.get('content', '')}".lower()
@@ -122,6 +86,7 @@ def _enrich_article(article: dict[str, Any]) -> dict[str, Any]:
         is_duplicate=False,
     )
     return article
+
 
 def _connect() -> sqlite3.Connection:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -342,26 +307,35 @@ def explorer_page(articles: list[dict[str, Any]]) -> None:
 
 def intelligence_page(articles: list[dict[str, Any]], api_url: str) -> None:
     st.title("Search & intelligence")
-    st.caption("Classified local search works offline; the optional API adds Gemini and Chroma semantic retrieval.")
+    st.caption("Ask the AI multi-agent system about the market.")
+    
     query = st.text_input("Ask about the market", placeholder="e.g. HDFC Bank, RBI policy, banking sector")
-    use_api = st.checkbox("Use FastAPI/Gemini when available", value=False)
+    use_api = st.checkbox("Use FastAPI/Gemini when available", value=True)
+    
     if st.button("Analyze query", type="primary", disabled=not query):
         query_type = entity = None
         results: list[dict[str, Any]]
+        
         if use_api:
-            try:
-                response = requests.post(f"{api_url.rstrip('/')}/query", json={"query": query}, timeout=20)
-                response.raise_for_status()
-                payload = response.json()
-                query_type, entity, results = payload.get("query_type"), payload.get("extracted_entity"), payload.get("results", [])
-            except requests.RequestException as error:
-                st.warning(f"API unavailable ({error}). Showing local results instead.")
-                query_type, entity, results = search_articles(articles, query)
+            with st.spinner("LangGraph agents are analyzing your query..."):
+                try:
+                    response = requests.post(f"{api_url.rstrip('/')}/query", json={"query": query}, timeout=30)
+                    response.raise_for_status()
+                    payload = response.json()
+                    query_type = payload.get("query_type")
+                    entity = payload.get("extracted_entity")
+                    results = payload.get("results", [])
+                except requests.RequestException as error:
+                    st.error(f"🚨 FastAPI backend is offline ({error}). Falling back to basic local search.")
+                    query_type, entity, results = search_articles(articles, query)
         else:
             query_type, entity, results = search_articles(articles, query)
-        st.success(f"Intent: {query_type or 'unknown'}" + (f" · Entity: {entity}" if entity else ""))
+            
+        st.success(f"🧠 AI Intent Classified: **{(query_type or 'unknown').title()}**" + (f" · Entity: **{entity}**" if entity else ""))
+        
         if not results:
             st.warning("No matching articles found.")
+            
         for article in results:
             render_article(article, expanded=True)
 
@@ -382,14 +356,28 @@ def main() -> None:
     st.sidebar.title("📈 FinPulse")
     st.sidebar.caption("Financial news intelligence")
     api_url = st.sidebar.text_input("FastAPI URL", "http://127.0.0.1:8000")
-    # if st.sidebar.button("↻ Refresh data"):
-    #     with st.spinner("Loading bundled news into SQLite..."):
-    #         count = seed_sample_data()
-    #         load_articles.clear()
-    #     st.sidebar.success(f"Upserted {count} sample articles.")
-    # if MOCK_NEWS_PATH.exists():
-    #     seed_sample_data()
+    
+    st.sidebar.divider()
+    
+    # --- NEW: Fetch Latest News Button ---
+    if st.sidebar.button("📡 Fetch Latest News", use_container_width=True):
+        with st.sidebar.spinner("Triggering backend pipeline..."):
+            try:
+                response = requests.post(f"{api_url.rstrip('/')}/fetch-latest", timeout=10)
+                if response.status_code == 200:
+                    st.sidebar.success("Fetch started! Wait 15s, then click Refresh.")
+                else:
+                    st.sidebar.error(f"Backend error: {response.status_code}")
+            except requests.exceptions.ConnectionError:
+                st.sidebar.error("Backend offline. Is Uvicorn running?")
+                
+    # --- NEW: Refresh Dashboard Button ---
+    if st.sidebar.button("↻ Refresh Dashboard", use_container_width=True):
+        load_articles.clear() # Clears the cache
+        st.rerun()            # Force Streamlit to re-read the SQLite DB
+
     articles = load_articles()
+    
     page = st.sidebar.radio("Navigate", ["Dashboard", "News explorer", "Search & intelligence"])
     if page == "Dashboard":
         dashboard_page(articles)
@@ -397,6 +385,7 @@ def main() -> None:
         explorer_page(articles)
     else:
         intelligence_page(articles, api_url)
+        
     st.sidebar.divider()
     st.sidebar.caption(f"SQLite: {DB_PATH.name} · {len(articles)} articles")
 
