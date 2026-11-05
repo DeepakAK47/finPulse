@@ -19,6 +19,13 @@ data through a Streamlit dashboard and an optional FastAPI service.
 - Finnhub-based scheduled ingestion.
 - Manual ingestion trigger through the API.
 
+## Dashboard preview
+
+The Streamlit dashboard provides a quick view of stored articles, sources,
+companies, tracked symbols, and sector coverage.
+
+![FinPulse dashboard preview](./docs/dashboard-preview.png)
+
 ## Architecture
 
 ```text
