@@ -19,9 +19,10 @@ class ExtractedEntities(BaseModel):
 # 2. Initialize the stable Gemini model
 # Note: Do NOT pass temperature=0; Gemini 3.x Flash models ignore/deprecate it.
 llm = ChatGoogleGenerativeAI(
-    model="gemini-3.8-flash", 
+    model="gemini-3.5-flash-lite", 
     api_key=os.getenv("GOOGLE_API_KEY")
 )
+
 
 # 3. Force structured output
 structured_llm = llm.with_structured_output(ExtractedEntities)

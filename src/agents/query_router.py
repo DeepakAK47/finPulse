@@ -36,7 +36,7 @@ def _classify(query: str) -> QueryIntent:
     from langchain_google_genai import ChatGoogleGenerativeAI
 
     llm = ChatGoogleGenerativeAI(
-        model="gemini-3.8-flash",
+        model="gemini-3.5-flash-lite",
         api_key=GOOGLE_API_KEY,
         request_timeout=10,
         max_retries=0,

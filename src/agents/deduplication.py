@@ -1,7 +1,6 @@
 # Deduplication Agent
 # This agent checks ChromaDB for semantic similarity. If the distance is extremely low (meaning the meaning is identical), it marks it as a duplicate. If it's unique, it saves the new vector to ChromaDB so future articles can be compared against it.
 
-# src/agents/deduplication.py
 import uuid
 from src.database.chroma_client import news_collection
 from src.utils.embedding import get_embedding
@@ -46,9 +45,14 @@ def deduplicate_news(state: NewsState) -> NewsState:
     news_collection.add(
         embeddings=[embedding],
         documents=[text_to_embed],
-        metadatas=[{"source": state["source"]}],
+        metadatas=[
+            {
+                "source": state["source"],
+                "title": state["title"],
+                "content": state["content"],
+            }
+        ],
         ids=[state['article_id']]
     )
     print(f"✅ UNIQUE ARTICLE. Saved to Vector DB with ID: {state['article_id']}")
     return state
-

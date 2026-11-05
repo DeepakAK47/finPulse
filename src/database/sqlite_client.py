@@ -1,4 +1,4 @@
-# setup the realtionship between the tables
+# Purpose of this : Initialize the SQLite database and create the necessary tables for storing news articles.
 import os
 from sqlalchemy import create_engine, Column, String, Boolean, JSON
 from sqlalchemy.orm import declarative_base, sessionmaker
@@ -12,7 +12,7 @@ DATABASE_URL = f"sqlite:///{DB_PATH}"
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
-
+ 
 # 3. Define the Table Schema
 class NewsArticle(Base):
     __tablename__ = "news_articles"
@@ -44,3 +44,4 @@ def get_db():
         yield db
     finally:
         db.close()
+        

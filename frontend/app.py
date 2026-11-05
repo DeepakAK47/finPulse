@@ -25,6 +25,8 @@ MOCK_NEWS_PATH = DATA_DIR / "mock_news.json"
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from src.database.chroma_client import news_collection
+
 
 COMPANY_TICKERS = {
     "HDFC Bank": "HDFCBANK",
@@ -183,6 +185,31 @@ def seed_sample_data() -> int:
     return len(articles)
 
 
+def _load_chroma_articles() -> list[dict[str, Any]]:
+    stored = news_collection.get(include=["documents", "metadatas"])
+    documents = stored.get("documents") or []
+    metadatas = stored.get("metadatas") or []
+    ids = stored.get("ids") or []
+    articles: list[dict[str, Any]] = []
+
+    for index, document in enumerate(documents):
+        if not document:
+            continue
+        metadata = metadatas[index] if index < len(metadatas) else {}
+        metadata = metadata or {}
+        articles.append(
+            _enrich_article(
+                {
+                    "id": ids[index] if index < len(ids) else f"chroma-{index}",
+                    "title": metadata.get("title") or document[:120],
+                    "content": metadata.get("content") or document,
+                    "source": metadata.get("source") or "ChromaDB",
+                }
+            )
+        )
+    return articles
+
+
 @st.cache_data(ttl=30)
 def load_articles() -> list[dict[str, Any]]:
     connection = _connect()
@@ -198,7 +225,12 @@ def load_articles() -> list[dict[str, Any]]:
         for field in ("companies", "sectors", "regulators", "impacted_stocks"):
             article[field] = _json_value(article[field], [])
         articles.append(article)
-    return articles
+    if articles:
+        return articles
+
+    # Ingestion writes vectors before the enriched SQLite record. Keep the
+    # dashboard useful when that second write has not completed yet.
+    return _load_chroma_articles()
 
 
 def classify_query(query: str) -> tuple[str, str | None]:
