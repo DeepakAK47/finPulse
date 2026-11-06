@@ -355,7 +355,7 @@ def main() -> None:
 
     st.sidebar.title("📈 FinPulse")
     st.sidebar.caption("Financial news intelligence")
-    api_url = st.sidebar.text_input("FastAPI URL", "http://127.0.0.1:8000")
+    api_url = st.sidebar.text_input("FastAPI URL", "https://finpulse-a0tg.onrender.com")
     
     st.sidebar.divider()
     
