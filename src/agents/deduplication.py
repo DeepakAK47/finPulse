@@ -19,40 +19,56 @@ def deduplicate_news(state: NewsState) -> NewsState:
     
     # 2. Generate the vector
     embedding = get_embedding(text_to_embed)
-    
-    # 3. Query ChromaDB for the most similar article
-    results = news_collection.query(
-        query_embeddings=[embedding],
-        n_results=1
-    )
-    
-    # 4. Check if we found a match
-    if results['distances'] and len(results['distances'][0]) > 0:
-        distance = results['distances'][0][0]
-        
-        # If the distance is below our threshold, it's a duplicate
-        if distance < SIMILARITY_THRESHOLD:
-            state['is_duplicate'] = True
-            state['canonical_id'] = results['ids'][0][0]
-            print(f"❌ DUPLICATE FOUND! Matches ID: {state['canonical_id']} (Distance: {distance:.3f})")
-            return state
+
+    # Embeddings are optional for ingestion. SQLite should still receive
+    # articles when Gemini is unavailable or rate-limited.
+    if embedding:
+        try:
+            collection_count = news_collection.count()
+            if collection_count:
+                results = news_collection.query(
+                    query_embeddings=[embedding],
+                    n_results=1,
+                )
+
+                distances = results.get("distances") or []
+                ids = results.get("ids") or []
+                if distances and distances[0] and ids and ids[0]:
+                    distance = distances[0][0]
+                    if distance < SIMILARITY_THRESHOLD:
+                        state["is_duplicate"] = True
+                        state["canonical_id"] = ids[0][0]
+                        print(
+                            f"Duplicate found: {state['canonical_id']} "
+                            f"(Distance: {distance:.3f})"
+                        )
+                        return state
+        except Exception as error:
+            print(f"Vector duplicate check unavailable; using SQLite: {error}")
+            embedding = None
 
     # 5. If it's unique, save it to the Vector DB
     state['is_duplicate'] = False
     if not state.get('article_id'):
         state['article_id'] = str(uuid.uuid4())
         
-    news_collection.add(
-        embeddings=[embedding],
-        documents=[text_to_embed],
-        metadatas=[
-            {
-                "source": state["source"],
-                "title": state["title"],
-                "content": state["content"],
-            }
-        ],
-        ids=[state['article_id']]
-    )
-    print(f"✅ UNIQUE ARTICLE. Saved to Vector DB with ID: {state['article_id']}")
+    if embedding:
+        try:
+            news_collection.add(
+                embeddings=[embedding],
+                documents=[text_to_embed],
+                metadatas=[
+                    {
+                        "source": state["source"],
+                        "title": state["title"],
+                        "content": state["content"],
+                    }
+                ],
+                ids=[state["article_id"]],
+            )
+            print(f"Unique article saved to vector database: {state['article_id']}")
+        except Exception as error:
+            print(f"Vector storage unavailable; using SQLite: {error}")
+    else:
+        print("Unique article will be stored in SQLite without vector search.")
     return state

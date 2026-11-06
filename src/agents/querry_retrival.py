@@ -40,6 +40,10 @@ def retrieve_news(state: QueryState) -> QueryState:
         elif q_type == "semantic":
             # Use ChromaDB for semantic search
             embedding = get_embedding(state['query'])
+            if not embedding:
+                results = []
+                state['results'] = results
+                return state
             chroma_res = news_collection.query(query_embeddings=[embedding], n_results=3)
             
             if chroma_res['ids'] and len(chroma_res['ids'][0]) > 0:
