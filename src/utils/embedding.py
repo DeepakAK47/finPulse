@@ -1,9 +1,14 @@
-# Creating the Embedding model for the text data using the SentenceTransformer library.
+# src/utils/embedding.py
 from sentence_transformers import SentenceTransformer
 
-# Load the model globally so it only loads once into memory
-model = SentenceTransformer('all-MiniLM-L6-v2')
+# Don't load the model globally. This causes OOM on Render free tier.
+_model = None
 
 def get_embedding(text: str) -> list[float]:
-    """Converts a string of text into a vector embedding."""
-    return model.encode(text).tolist()
+    """Converts text to embedding, loading model only when needed."""
+    global _model
+    if _model is None:
+        print("Loading embedding model...")
+        _model = SentenceTransformer('all-MiniLM-L6-v2')
+    
+    return _model.encode(text).tolist()
