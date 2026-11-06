@@ -175,6 +175,16 @@ Or:
 
 The API is normally available at `http://127.0.0.1:8000`.
 
+### Deploy on Render
+
+Create a Render **Web Service** using the repository's `Dockerfile`. The
+container starts FastAPI on Render's `$PORT` (falling back to `10000` locally),
+and the health-check path is `/health`. Add `FINNHUB_API_KEY` and, when using
+Gemini features, `GOOGLE_API_KEY` as Render environment variables. The
+dependency list uses CPU-only PyTorch because Render's small instances do not
+have GPU support and can run out of memory while installing or importing the
+CUDA build.
+
 Useful endpoints:
 
 | Method | Endpoint | Purpose |
