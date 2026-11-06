@@ -176,7 +176,17 @@ def _load_chroma_articles() -> list[dict[str, Any]]:
 
 
 @st.cache_data(ttl=30)
-def load_articles() -> list[dict[str, Any]]:
+def load_articles(api_url: str | None = None) -> list[dict[str, Any]]:
+    if api_url:
+        try:
+            response = requests.get(
+                f"{api_url.rstrip('/')}/articles", timeout=15
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException:
+            pass
+
     connection = _connect()
     try:
         rows = connection.execute(
@@ -363,20 +373,30 @@ def main() -> None:
     if st.sidebar.button("📡 Fetch Latest News", use_container_width=True):
         with st.sidebar.spinner("Triggering backend pipeline..."):
             try:
-                response = requests.post(f"{api_url.rstrip('/')}/fetch-latest", timeout=10)
-                if response.status_code == 200:
-                    st.sidebar.success("Fetch started! Wait 15s, then click Refresh.")
+                response = requests.post(
+                    f"{api_url.rstrip('/')}/fetch-latest", timeout=120
+                )
+                response.raise_for_status()
+                result = response.json()
+                if result.get("status") == "success":
+                    load_articles.clear()
+                    st.sidebar.success(
+                        f"Fetched {result['fetched']} articles; "
+                        f"stored {result['processed']} new articles."
+                    )
                 else:
-                    st.sidebar.error(f"Backend error: {response.status_code}")
-            except requests.exceptions.ConnectionError:
-                st.sidebar.error("Backend offline. Is Uvicorn running?")
+                    st.sidebar.warning(
+                        f"Fetch completed with errors: {result.get('errors', [])}"
+                    )
+            except requests.RequestException as error:
+                st.sidebar.error(f"Fetch failed: {error}")
                 
     # --- NEW: Refresh Dashboard Button ---
     if st.sidebar.button("↻ Refresh Dashboard", use_container_width=True):
         load_articles.clear() # Clears the cache
         st.rerun()            # Force Streamlit to re-read the SQLite DB
 
-    articles = load_articles()
+    articles = load_articles(api_url)
     
     page = st.sidebar.radio("Navigate", ["Dashboard", "News explorer", "Search & intelligence"])
     if page == "Dashboard":

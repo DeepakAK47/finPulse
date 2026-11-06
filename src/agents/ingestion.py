@@ -9,20 +9,19 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")
-
 def fetch_real_news() -> list:
     """
     Fetches real financial news from Finnhub API.
     Returns a list of articles formatted for the pipeline.
     """
-    if not FINNHUB_API_KEY:
+    api_key = os.getenv("FINNHUB_API_KEY")
+    if not api_key:
         raise ValueError("FINNHUB_API_KEY is not set in .env")
 
     print("📡 Fetching real-time news from Finnhub...")
     
     # Finnhub general news endpoint
-    url = f"https://finnhub.io/api/v1/news?category=general&token={FINNHUB_API_KEY}"
+    url = f"https://finnhub.io/api/v1/news?category=general&token={api_key}"
     
     try:
         response = requests.get(url, timeout=10)

@@ -2,7 +2,7 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, BackgroundTasks
+from fastapi import FastAPI
 from pydantic import BaseModel
 from src.graphs.query_graph import query_app
 
@@ -21,6 +21,35 @@ def health():
 class QueryInput(BaseModel):
     query: str
 
+
+@app.get("/articles")
+def list_articles():
+    """Return stored articles for the Streamlit frontend."""
+    init_db()
+    from src.database.sqlite_client import SessionLocal, NewsArticle
+
+    db = SessionLocal()
+    try:
+        articles = db.query(NewsArticle).order_by(NewsArticle.id.desc()).all()
+        return [
+            {
+                "id": article.id,
+                "title": article.title,
+                "content": article.content,
+                "source": article.source,
+                "is_duplicate": article.is_duplicate,
+                "canonical_id": article.canonical_id,
+                "companies": article.companies or [],
+                "sectors": article.sectors or [],
+                "regulators": article.regulators or [],
+                "impacted_stocks": article.impacted_stocks or [],
+            }
+            for article in articles
+        ]
+    finally:
+        db.close()
+
+
 @app.post("/query")
 def query_news(payload: QueryInput):
     initial_state = {"query": payload.query}
@@ -32,38 +61,38 @@ def query_news(payload: QueryInput):
     }
 
 
-# --- NEW ENDPOINT FOR STREAMLIT UI ---
 @app.post("/fetch-latest")
-def fetch_latest_news(background_tasks: BackgroundTasks):
-    """Triggers the real-time ingestion pipeline manually from the UI."""
-    
-    def run_pipeline():
-        print("\n⏰ Manual trigger: Running news ingestion...")
-        init_db()
-        articles = fetch_real_news()
-        
-        # Limit to 5 articles to prevent long wait times and API rate limits
-        for article in articles[:5]:
-            initial_state = {
-                "article_id": article["id"],
-                "title": article["title"],
-                "content": article["content"],
-                "source": article["source"],
-                "is_duplicate": False,
-                "canonical_id": None
-            }
-            try:
-                # Run the full LangGraph pipeline
-                result = ingestion_app.invoke(initial_state)
-                print(f"Processed: {article['title'][:50]}... | Duplicate: {result.get('is_duplicate')}")
-            except Exception as e:
-                print(f"❌ Error processing article: {e}")
+def fetch_latest_news():
+    """Fetch and store the latest articles, returning the processing result."""
+    init_db()
+    articles = fetch_real_news()[:5]
+    processed = 0
+    errors = []
 
-    # Run the pipeline in the background so the UI doesn't freeze
-    background_tasks.add_task(run_pipeline)
-    
+    for article in articles:
+        initial_state = {
+            "article_id": article["id"],
+            "title": article["title"],
+            "content": article["content"],
+            "source": article["source"],
+            "is_duplicate": False,
+            "canonical_id": None,
+        }
+        try:
+            result = ingestion_app.invoke(initial_state)
+            if not result.get("is_duplicate"):
+                processed += 1
+            print(
+                f"Processed: {article['title'][:50]}... | "
+                f"Duplicate: {result.get('is_duplicate')}"
+            )
+        except Exception as error:
+            print(f"Error processing article: {error}")
+            errors.append(str(error))
+
     return {
-        "status": "success", 
-        "message": "Fetching latest news in the background. Please wait a moment and refresh."
+        "status": "success" if not errors else "partial",
+        "fetched": len(articles),
+        "processed": processed,
+        "errors": errors,
     }
-

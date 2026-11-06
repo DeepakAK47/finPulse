@@ -191,7 +191,8 @@ Useful endpoints:
 |---|---|---|
 | GET | `/health` | Check that the API is running |
 | POST | `/query` | Run the query workflow |
-| POST | `/fetch-latest` | Start up to five live articles in the background |
+| GET | `/articles` | Return articles stored by the API |
+| POST | `/fetch-latest` | Fetch and synchronously process up to five live articles |
 
 Example requests:
 
@@ -209,8 +210,9 @@ Invoke-RestMethod `
   -Uri http://127.0.0.1:8000/fetch-latest
 ```
 
-When using `/fetch-latest`, wait for the background task to finish and refresh
-the dashboard. The endpoint returns before ingestion is complete.
+The Streamlit dashboard calls `/articles` after fetching, because the
+Streamlit and FastAPI Render services do not share their local SQLite files.
+For a deployed setup, the dashboard's FastAPI URL must point to the API service.
 
 ## Run the scheduler
 

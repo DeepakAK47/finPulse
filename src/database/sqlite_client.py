@@ -35,7 +35,7 @@ class NewsArticle(Base):
 # 4. Initialize the Database
 def init_db():
     Base.metadata.create_all(bind=engine)
-    print("✅ SQLite Database initialized.")
+    print("SQLite database initialized.")
 
 # 5. Dependency for FastAPI (we'll use this later)
 def get_db():
