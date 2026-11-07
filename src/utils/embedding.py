@@ -1,9 +1,10 @@
 # src/utils/embedding.py
 import os
 from typing import Optional
-
+import logging
 from google import genai
 from dotenv import load_dotenv
+#IMP
 
 load_dotenv()
 
